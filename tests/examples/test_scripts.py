@@ -57,22 +57,23 @@ def run_test(filepath):
     [
         ("finetuning", "image_classification.py"),
         ("finetuning", "image_classification_multi_label.py"),
-        # ("finetuning", "object_detection.py"),  # TODO: takes too long.
+        # ("finetuning", "object_detection.py"),
         ("finetuning", "semantic_segmentation.py"),
-        # ("finetuning", "summarization.py"),  # TODO: takes too long.
+        # ("finetuning", "summarization.py"),
         ("finetuning", "tabular_classification.py"),
-        # ("finetuning", "video_classification.py"),
-        # ("finetuning", "text_classification.py"),  # TODO: takes too long
+        # ("finetuning", "text_classification.py"),
         ("finetuning", "translation.py"),
+        # ("finetuning", "video_classification.py"),
         ("predict", "image_classification.py"),
         ("predict", "image_classification_multi_label.py"),
+        ("predict", "image_embedder.py"),
+        ("predict", "object_detection"),
         ("predict", "semantic_segmentation.py"),
+        # ("predict", "summarization.py"),
         ("predict", "tabular_classification.py"),
         # ("predict", "text_classification.py"),
-        ("predict", "image_embedder.py"),
-        ("predict", "video_classification.py"),
-        # ("predict", "summarization.py"),  # TODO: takes too long
         ("predict", "translation.py"),
+        ("predict", "video_classification.py"),
     ]
 )
 def test_example(tmpdir, folder, file):
