@@ -195,8 +195,6 @@ class Task(LightningModule):
         data_pipeline = self.build_data_pipeline(data_source or "default", data_pipeline)
 
         x = [x for x in data_pipeline.data_source.generate_dataset(x, running_stage)]
-        wp = data_pipeline.worker_preprocessor(running_stage)
-        import pdb; pdb.set_trace()
         x = data_pipeline.worker_preprocessor(running_stage)(x)
         # switch to self.device when #7188 merge in Lightning
         x = self.transfer_batch_to_device(x, next(self.parameters()).device)
