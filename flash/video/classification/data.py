@@ -20,10 +20,10 @@ from pytorch_lightning.utilities.exceptions import MisconfigurationException
 from torch.utils.data import RandomSampler, Sampler
 
 from flash.core.data.data_module import DataModule
-from flash.core.data.data_source import DefaultDataKeys, DefaultDataSources, LabelsState, PathsDataSource
+from flash.core.data.data_source import DefaultDataKeys, DefaultDataSources, LabelsState, PathsDataSource, FiftyOneDataSource
 from flash.core.data.process import Preprocess
 from flash.core.data.transforms import merge_transforms
-from flash.core.utilities.imports import _KORNIA_AVAILABLE, _PYTORCHVIDEO_AVAILABLE
+from flash.core.utilities.imports import _KORNIA_AVAILABLE,_PYTORCHVIDEO_AVAILABLE, _FIFTYONE_AVAILABLE
 
 if _KORNIA_AVAILABLE:
     import kornia.augmentation as K
@@ -31,16 +31,20 @@ if _KORNIA_AVAILABLE:
 if _PYTORCHVIDEO_AVAILABLE:
     from pytorchvideo.data.clip_sampling import ClipSampler, make_clip_sampler
     from pytorchvideo.data.encoded_video import EncodedVideo
-    from pytorchvideo.data.encoded_video_dataset import EncodedVideoDataset, labeled_encoded_video_dataset
+    from pytorchvideo.data.labeled_video_dataset import LabeledVideoDataset, labeled_video_dataset
+    from pytorchvideo.data.labeled_video_paths import LabeledVideoPaths
     from pytorchvideo.transforms import (
         ApplyTransformToKey,
         RandomShortSideScale,
         ShortSideScale,
         UniformTemporalSubsample,
     )
-    from torchvision.transforms import Compose, RandomCrop, RandomHorizontalFlip
+    from torchvision.transforms import CenterCrop, Compose, RandomCrop, RandomHorizontalFlip
 else:
     ClipSampler, EncodedVideoDataset, EncodedVideo, ApplyTransformToKey = None, None, None, None
+
+if _FIFTYONE_AVAILABLE:
+    from fiftyone.core.collections import SampleCollection
 
 _PYTORCHVIDEO_DATA = Dict[str, Union[str, torch.Tensor, int, float, List]]
 
@@ -60,8 +64,8 @@ class VideoClassificationPathsDataSource(PathsDataSource):
         self.decode_audio = decode_audio
         self.decoder = decoder
 
-    def load_data(self, data: str, dataset: Optional[Any] = None) -> 'EncodedVideoDataset':
-        ds: EncodedVideoDataset = labeled_encoded_video_dataset(
+    def load_data(self, data: str, dataset: Optional[Any] = None) -> 'LabeledVideoDataset':
+        ds: LabeledVideoDataset = labeled_video_dataset(
             pathlib.Path(data),
             self.clip_sampler,
             video_sampler=self.video_sampler,
@@ -81,7 +85,87 @@ class VideoClassificationPathsDataSource(PathsDataSource):
             clip_index,
             aug_index,
             is_last_clip,
-        ) = self.clip_sampler(0.0, video.duration)
+        ) = self.clip_sampler(0.0, video.duration, {})
+
+        loaded_clip = video.get_clip(clip_start, clip_end)
+
+        clip_is_null = (
+            loaded_clip is None or loaded_clip["video"] is None or (loaded_clip["audio"] is None and self.decode_audio)
+        )
+
+        if clip_is_null:
+            raise MisconfigurationException(
+                f"The provided video is too short {video.duration} to be clipped at {self.clip_sampler._clip_duration}"
+            )
+
+        frames = loaded_clip["video"]
+        audio_samples = loaded_clip["audio"]
+        return {
+            "video": frames,
+            "video_name": video.name,
+            "video_index": 0,
+            "clip_index": clip_index,
+            "aug_index": aug_index,
+            **({
+                "audio": audio_samples
+            } if audio_samples is not None else {}),
+        }
+
+    def predict_load_sample(self, sample: Dict[str, Any]) -> Dict[str, Any]:
+        return self._encoded_video_to_dict(EncodedVideo.from_path(sample[DefaultDataKeys.INPUT]))
+
+
+class VideoClassificationFiftyOneDataSource(FiftyOneDataSource):
+
+    def __init__(
+        self,
+        clip_sampler: 'ClipSampler',
+        label_field: str = "ground_truth",
+        video_sampler: Type[Sampler] = torch.utils.data.RandomSampler,
+        decode_audio: bool = True,
+        decoder: str = "pyav",
+    ):
+        super().__init__()
+        self.label_field = label_field
+        self.clip_sampler = clip_sampler
+        self.video_sampler = video_sampler
+        self.decode_audio = decode_audio
+        self.decoder = decoder
+
+    def load_data(self, data: SampleCollection, dataset: Optional[Any] = None) -> 'LabeledVideoDataset':
+        label_to_class_mapping = dict(list(enumerate(data.default_classes)))
+        class_to_label_mapping = {c:l for l,c in label_to_class_mapping.items()}
+
+        labeled_video_paths = [] 
+        for s in data:
+            label = class_to_label_mapping[s[self.label_field].label]
+            filepath = s.filepath
+            labeled_video_paths.append((filepath,label))
+
+        labeled_video_paths = LabeledVideoPaths(
+            labeled_video_paths
+        )
+
+        ds: LabeledVideoDataset = LabeledVideoDataset(
+            labeled_video_paths,
+            self.clip_sampler,
+            video_sampler=self.video_sampler,
+            decode_audio=self.decode_audio,
+            decoder=self.decoder,
+        )
+        if self.training:
+            self.set_state(LabelsState(label_to_class_mapping))
+            dataset.num_classes = len(class_to_label_mapping)
+        return ds
+
+    def _encoded_video_to_dict(self, video) -> Dict[str, Any]:
+        (
+            clip_start,
+            clip_end,
+            clip_index,
+            aug_index,
+            is_last_clip,
+        ) = self.clip_sampler(0.0, video.duration, {})
 
         loaded_clip = video.get_clip(clip_start, clip_end)
 
@@ -119,6 +203,7 @@ class VideoClassificationPreprocess(Preprocess):
         val_transform: Optional[Dict[str, Callable]] = None,
         test_transform: Optional[Dict[str, Callable]] = None,
         predict_transform: Optional[Dict[str, Callable]] = None,
+        label_field: str = "ground_truth",
         clip_sampler: Union[str, 'ClipSampler'] = "random",
         clip_duration: float = 2,
         clip_sampler_kwargs: Dict[str, Any] = None,
@@ -164,6 +249,13 @@ class VideoClassificationPreprocess(Preprocess):
                     decode_audio=decode_audio,
                     decoder=decoder,
                 ),
+                DefaultDataSources.FIFTYONE: VideoClassificationFiftyOneDataSource(
+                    clip_sampler,
+                    label_field=label_field,
+                    video_sampler=video_sampler,
+                    decode_audio=decode_audio,
+                    decoder=decoder,
+                ),
             },
             default_data_source=DefaultDataSources.FILES,
         )
@@ -185,14 +277,17 @@ class VideoClassificationPreprocess(Preprocess):
 
     def default_transforms(self) -> Dict[str, Callable]:
         if self.training:
+            print('training')
             post_tensor_transform = [
                 RandomShortSideScale(min_size=256, max_size=320),
                 RandomCrop(244),
                 RandomHorizontalFlip(p=0.5),
             ]
         else:
+            print('not training')
             post_tensor_transform = [
                 ShortSideScale(256),
+                CenterCrop(244),
             ]
 
         return {

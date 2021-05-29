@@ -37,6 +37,7 @@ from pytorch_lightning.trainer.states import RunningStage
 from pytorch_lightning.utilities.enums import LightningEnum
 from torch.nn import Module
 from torch.utils.data.dataset import Dataset
+from fiftyone.core.collections import SampleCollection
 
 from flash.core.data.auto_dataset import AutoDataset, BaseAutoDataset, IterableAutoDataset
 from flash.core.data.properties import ProcessState, Properties
@@ -145,6 +146,7 @@ class DefaultDataSources(LightningEnum):
     CSV = "csv"
     JSON = "json"
     DATASET = "dataset"
+    FIFTYONE = "fiftyone"
 
     # TODO: Create a FlashEnum class???
     def __hash__(self) -> int:
@@ -461,3 +463,14 @@ class TensorDataSource(SequenceDataSource[torch.Tensor]):
 class NumpyDataSource(SequenceDataSource[np.ndarray]):
     """The ``NumpyDataSource`` is a ``SequenceDataSource`` which expects the input to
     :meth:`~flash.core.data.data_source.DataSource.load_data` to be a sequence of ``np.ndarray`` objects."""
+
+
+class FiftyOneDataSource(SequenceDataSource[SampleCollection]):
+    """The ``FiftyOneDataSource`` is a ``SequenceDataSource`` which expects the input to
+    :meth:`~flash.core.data.data_source.DataSource.load_data` to be a sequence
+    of FiftyOne Dataset objects."""
+
+    def predict_load_data(self,
+                          data: SampleCollection,
+                          dataset: Optional[Any] = None) -> Sequence[Mapping[str, Any]]:
+        return [{DefaultDataKeys.INPUT: s.filepath} for s in data] 

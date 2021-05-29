@@ -21,6 +21,10 @@ from pytorch_lightning.utilities import rank_zero_warn
 from flash.core.data.data_source import LabelsState
 from flash.core.data.process import Serializer
 from flash.core.model import Task
+from flash.core.utilities.imports import _FIFTYONE_AVAILABLE
+
+if _FIFTYONE_AVAILABLE:
+    import fiftyone as fo
 
 
 def binary_cross_entropy_with_logits(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
@@ -158,3 +162,66 @@ class Labels(Classes):
         else:
             rank_zero_warn("No LabelsState was found, this serializer will act as a Classes serializer.", UserWarning)
             return classes
+
+
+class FiftyOneLabels(Classes):
+    """A :class:`.Serializer` which converts the model outputs (either logits or probabilities) to the label of the
+    argmax classification.
+
+    Args:
+        labels: A list of labels, assumed to map the class index to the label for that class. If ``labels`` is not
+            provided, will attempt to get them from the :class:`.LabelsState`.
+
+        multi_label: If true, treats outputs as multi label logits.
+
+        threshold: The threshold to use for multi_label classification.
+    """
+
+    def __init__(self, labels: Optional[List[str]] = None, multi_label: bool = False, threshold: float = 0.5):
+        if not _FIFTYONE_AVAILABLE:
+            raise ModuleNotFoundError("Please, run `pip install fiftyone`.")
+
+        super().__init__(multi_label=multi_label, threshold=threshold)
+        self._labels = labels
+
+        if labels is not None:
+            self.set_state(LabelsState(labels))
+
+    def serialize(self, sample: Any) -> Union[fo.Classification,
+            fo.Classifications]:
+        labels = None
+
+        if self._labels is not None:
+            labels = self._labels
+        else:
+            state = self.get_state(LabelsState)
+            if state is not None:
+                labels = state.labels
+
+        classes = super().serialize(sample)
+
+        if labels is not None:
+            if self.multi_label:
+                classifications = []
+                for cls in classes:
+                    fo_cls = fo.Classification(
+                        label = labels[cls],
+                    )
+                    classifications.append(fo_cls)
+                fo_labels = fo.Classifications(
+                    classifications=classifications,
+                    logits = sample.tolist(),
+                )
+            else:
+                fo_labels = fo.Classification(
+                    label = labels[classes],
+                    logits = sample.tolist(),
+                )
+        else:
+            rank_zero_warn("No LabelsState was found, this serializer will act as a Classes serializer.", UserWarning)
+            fo_labels = fo.Classification(
+                label = classes,
+                logits = sample.tolist(),
+            )
+
+        return fo_labels

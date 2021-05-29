@@ -152,6 +152,7 @@ class VideoClassifier(ClassificationTask):
         return x
 
     def predict_step(self, batch: Any, batch_idx: int, dataloader_idx: int = 0) -> Any:
+        print("video predict")
         predictions = self(batch["video"])
         return predictions
 
