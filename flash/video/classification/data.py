@@ -277,14 +277,12 @@ class VideoClassificationPreprocess(Preprocess):
 
     def default_transforms(self) -> Dict[str, Callable]:
         if self.training:
-            print('training')
             post_tensor_transform = [
                 RandomShortSideScale(min_size=256, max_size=320),
                 RandomCrop(244),
                 RandomHorizontalFlip(p=0.5),
             ]
         else:
-            print('not training')
             post_tensor_transform = [
                 ShortSideScale(256),
                 CenterCrop(244),
