@@ -114,8 +114,11 @@ jobs:
         restore-keys: lightning-flash-datasets-
 
     - name: Tests
+      env:
+          FIFTYONE_DO_NOT_TRACK: true
       run: |
         # tox --sitepackages
+        python -c "import fiftyone as fo ; print(fo.config.do_not_track)"
         coverage run --source flash -m pytest flash tests -v --junitxml=junit/test-results-${{ runner.os }}-${{ matrix.python-version }}-${{ matrix.requires }}.xml
         coverage xml
 
