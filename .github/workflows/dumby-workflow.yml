@@ -6,7 +6,7 @@ on: # Trigger the workflow on push or pull request, but only for the master bran
     branches: [master]
 
 jobs:
-  make-docs:
+  odd:
     runs-on: ubuntu-20.04
 
     steps:
