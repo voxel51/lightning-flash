@@ -114,8 +114,6 @@ jobs:
         restore-keys: lightning-flash-datasets-
 
     - name: Tests
-      env:
-          FIFTYONE_DO_NOT_TRACK: true
       run: |
         # tox --sitepackages
         python -c "import fiftyone as fo ; print(fo.config.do_not_track)"
