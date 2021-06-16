@@ -1,0 +1,17 @@
+name: "Dumby workflow"
+
+on: # Trigger the workflow on push or pull request, but only for the master branch
+  push: {}
+  pull_request:
+    branches: [master]
+
+jobs:
+  make-docs:
+    runs-on: ubuntu-20.04
+
+    steps:
+    - name: request
+      run: |
+        python --version
+        python -c 'import requests ; print(requests.get("https://voxel51.com/docs/fiftyone/objects.inv"))'
+      shell: bash
