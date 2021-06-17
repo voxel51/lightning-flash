@@ -13,5 +13,5 @@ jobs:
     - name: request
       run: |
         python --version
-        python -c 'import requests ; print(requests.get("https://voxel51.com/docs/fiftyone/objects.inv"))'
+        python -c 'import requests ; req = requests.Request("GET", "https://voxel51.com/docs/fiftyone/objects.inv").prepare() ; print(req.headers) ; print(requests.Session().send(req))'
       shell: bash
